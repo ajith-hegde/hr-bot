@@ -7,4 +7,6 @@ langchain-huggingface
 faiss-cpu
 pypdf
 numexpr
+
 gunicorn
+langchain
