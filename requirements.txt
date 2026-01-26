@@ -1,0 +1,10 @@
+pyTelegramBotAPI
+flask
+langchain-core
+langchain-community
+langchain-google-genai
+langchain-huggingface
+faiss-cpu
+pypdf
+numexpr
+gunicorn
