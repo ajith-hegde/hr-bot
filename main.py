@@ -4,7 +4,7 @@ from flask import Flask, request
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.agents import initialize_agent, AgentType
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 
@@ -24,21 +24,18 @@ retriever = db.as_retriever(search_kwargs={"k": 10})
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
 # --- TOOLS & AGENT ---
-# --- TOOLS & AGENT ---
 @tool
 def hr_policy_search(query: str) -> str:
     """Answers HR policy questions."""
     return "\n\n".join([doc.page_content for doc in retriever.invoke(query)])
 
 tools = [hr_policy_search]
-
-# The "Classic" stable agent setup
-agent_executor = initialize_agent(
-    tools=tools,
-    llm=llm,
-    agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
-    verbose=False
-)
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful HR Assistant."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+agent_executor = AgentExecutor(agent=create_tool_calling_agent(llm, tools, prompt), tools=tools)
 
 # --- TELEGRAM LOGIC ---
 @bot.message_handler(func=lambda message: True)
@@ -63,5 +60,4 @@ def set_webhook():
 
 # Required for Render to start the app
 if __name__ == "__main__":
-
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
