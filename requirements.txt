@@ -2,9 +2,9 @@ flask
 gunicorn
 pyTelegramBotAPI
 
-langchain==0.1.20
-langchain-core==0.1.45
-langchain-community==0.0.34
+langchain
+langchain-community
+langchain-core
 
 langchain-google-genai
 langchain-huggingface
