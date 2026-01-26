@@ -8,43 +8,52 @@ from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 
-# --- SECURE CONFIGURATION ---
+# --- CONFIGURATION ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL") # Render gives us this automatically
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL") 
 WEBHOOK_URL = f"{RENDER_URL}/{TELEGRAM_TOKEN}"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
 
-# --- LOAD AI BRAIN ---
+# --- LOAD AI ---
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 db = FAISS.load_local("vectorstore/db_faiss", embeddings, allow_dangerous_deserialization=True)
 retriever = db.as_retriever(search_kwargs={"k": 10})
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
 
-# --- TOOLS & AGENT ---
+# --- TOOLS ---
 @tool
 def hr_policy_search(query: str) -> str:
     """Answers HR policy questions."""
-    return "\n\n".join([doc.page_content for doc in retriever.invoke(query)])
+    # Simple RAG: Fetch docs and join them
+    docs = retriever.invoke(query)
+    return "\n\n".join([doc.page_content for doc in docs])
 
 tools = [hr_policy_search]
+
+# --- AGENT ---
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful HR Assistant."),
+    ("system", "You are a helpful HR Assistant. Use your tools to answer user questions."),
     ("human", "{input}"),
     ("placeholder", "{agent_scratchpad}"),
 ])
-agent_executor = AgentExecutor(agent=create_tool_calling_agent(llm, tools, prompt), tools=tools)
 
-# --- TELEGRAM LOGIC ---
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# --- TELEGRAM HANDLER ---
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
     bot.send_chat_action(message.chat.id, 'typing')
-    response = agent_executor.invoke({"input": message.text})
-    bot.reply_to(message, response['output'])
+    try:
+        response = agent_executor.invoke({"input": message.text})
+        bot.reply_to(message, response['output'])
+    except Exception as e:
+        bot.reply_to(message, "I am updating my brain. Please try again in 1 minute.")
 
-# --- WEBHOOK ROUTES ---
+# --- WEBHOOK ---
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
@@ -58,6 +67,5 @@ def set_webhook():
     bot.set_webhook(url=WEBHOOK_URL)
     return f"✅ Connected to {WEBHOOK_URL}!"
 
-# Required for Render to start the app
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
