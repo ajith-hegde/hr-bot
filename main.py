@@ -8,6 +8,8 @@ from langchain.agents.agent import AgentExecutor
 from langchain.agents.tool_calling import create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
+import langchain
+print("LANGCHAIN VERSION:", langchain.__version__)
 
 # --- CONFIGURATION ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -70,5 +72,6 @@ def set_webhook():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
 
 
