@@ -1,77 +1,101 @@
 import os
+import time
 import telebot
 from flask import Flask, request
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.agents.agent import AgentExecutor
-from langchain.agents.tool_calling import create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
-import langchain
-print("LANGCHAIN VERSION:", langchain.__version__)
+# RESTORED YOUR IMPORT:
+from langchain_classic.chains import RetrievalQA 
+from dotenv import load_dotenv
+from google.api_core.exceptions import ResourceExhausted
 
-# --- CONFIGURATION ---
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL") 
-WEBHOOK_URL = f"{RENDER_URL}/{TELEGRAM_TOKEN}"
+# 1. SETUP VARIABLES
+load_dotenv() 
+
+# SECURE: Get keys from Render Environment Variables
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") 
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 app = Flask(__name__)
 
-# --- LOAD AI ---
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-db = FAISS.load_local("vectorstore/db_faiss", embeddings, allow_dangerous_deserialization=True)
-retriever = db.as_retriever(search_kwargs={"k": 10})
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+# 2. LOAD BRAIN
+print("⏳ Loading AI Brain...")
 
-# --- TOOLS ---
-@tool
-def hr_policy_search(query: str) -> str:
-    """Answers HR policy questions."""
-    # Simple RAG: Fetch docs and join them
-    docs = retriever.invoke(query)
-    return "\n\n".join([doc.page_content for doc in docs])
+# Fix: Pass key explicitly
+embeddings = GoogleGenerativeAIEmbeddings(
+    model="models/embedding-001", 
+    google_api_key=GOOGLE_API_KEY
+)
 
-tools = [hr_policy_search]
+try:
+    # Load the vectorstore folder
+    db = FAISS.load_local("vectorstore/db_faiss", embeddings, allow_dangerous_deserialization=True)
+    retriever = db.as_retriever(search_kwargs={"k": 5})
+    
+    # Fix: Pass key explicitly
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash", 
+        temperature=0, 
+        google_api_key=GOOGLE_API_KEY
+    )
+    
+    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
+    print("✅ Brain loaded successfully!")
+except Exception as e:
+    print(f"⚠️ BRAIN ERROR: {e}")
+    qa_chain = None
 
-# --- AGENT ---
-prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are a helpful HR Assistant. Use your tools to answer user questions."),
-    ("human", "{input}"),
-    ("placeholder", "{agent_scratchpad}"),
-])
-
-agent = create_tool_calling_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-# --- TELEGRAM HANDLER ---
+# 3. MESSAGE HANDLER (With Auto-Retry Fix)
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
-    bot.send_chat_action(message.chat.id, 'typing')
-    try:
-        response = agent_executor.invoke({"input": message.text})
-        bot.reply_to(message, response['output'])
-    except Exception as e:
-        bot.reply_to(message, "I am updating my brain. Please try again in 1 minute.")
+    if not qa_chain:
+        bot.reply_to(message, "My brain is sleeping. Check logs.")
+        return
 
-# --- WEBHOOK ---
+    try:
+        print(f"User: {message.text}")
+        bot.send_chat_action(message.chat.id, 'typing')
+        
+        # Retry Logic for Rate Limits
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = qa_chain.invoke({"query": message.text})
+                bot.reply_to(message, response['result'])
+                break 
+            except ResourceExhausted:
+                print(f"⚠️ Quota hit! Waiting 10s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(10) 
+                if attempt == max_retries - 1:
+                    bot.reply_to(message, "I am overwhelmed. Try again later.")
+
+    except Exception as e:
+        bot.reply_to(message, "Error processing request.")
+        print(f"Error: {e}")
+
+# 4. SERVER (Webhook Only - Local Logic Removed)
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
-        bot.process_new_updates([telebot.types.Update.de_json(request.get_data().decode('utf-8'))])
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
         return '', 200
     return 'Forbidden', 403
 
-@app.route('/set_webhook')
-def set_webhook():
-    bot.remove_webhook()
-    bot.set_webhook(url=WEBHOOK_URL)
-    return f"✅ Connected to {WEBHOOK_URL}!"
+@app.route('/')
+def index():
+    return "Bot is running on Cloud!", 200
 
 if __name__ == "__main__":
+    # Simplified for Render
+    print("☁️ Starting Render Webhook Server...")
+    bot.remove_webhook()
+    time.sleep(1)
+    
+    if RENDER_URL:
+        bot.set_webhook(url=f"{RENDER_URL}/{TELEGRAM_TOKEN}")
+    
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
-
-
