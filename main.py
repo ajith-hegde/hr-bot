@@ -4,7 +4,7 @@ from flask import Flask, request
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.agents import AgentExecutor
+from langchain.agents.agent import AgentExecutor
 from langchain.agents.tool_calling import create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
@@ -70,4 +70,5 @@ def set_webhook():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
 
