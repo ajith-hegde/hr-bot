@@ -31,7 +31,7 @@ embeddings = GoogleGenerativeAIEmbeddings(
 
 try:
     # Load the vectorstore folder
-    db = FAISS.load_local("vectorstore/db_faiss", embeddings, allow_dangerous_deserialization=True)
+    db = FAISS.load_local("vectorstore", embeddings, allow_dangerous_deserialization=True)
     retriever = db.as_retriever(search_kwargs={"k": 5})
     
     # Fix: Pass key explicitly
@@ -99,3 +99,4 @@ if __name__ == "__main__":
         bot.set_webhook(url=f"{RENDER_URL}/{TELEGRAM_TOKEN}")
     
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
