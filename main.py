@@ -28,7 +28,7 @@ try:
     retriever = db.as_retriever(search_kwargs={"k": 5})
     
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash", 
+        model="gemini-3-flash-preview", 
         temperature=0, 
         google_api_key=GOOGLE_API_KEY
     )
@@ -99,4 +99,5 @@ if __name__ == "__main__":
     # Local testing only (Render ignores this)
     bot.remove_webhook()
     bot.infinity_polling()
+
 
