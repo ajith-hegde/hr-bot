@@ -22,16 +22,13 @@ app = Flask(__name__)
 # 2. LOAD BRAIN
 print("⏳ Loading AI Brain...")
 try:
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001", 
-        google_api_key=GOOGLE_API_KEY
-    )
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
     db = FAISS.load_local("vectorstore", embeddings, allow_dangerous_deserialization=True)
     retriever = db.as_retriever(search_kwargs={"k": 5})
     
     llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash", 
+        model="gemini-3-flash", 
         temperature=0, 
         google_api_key=GOOGLE_API_KEY
     )
@@ -102,3 +99,4 @@ if __name__ == "__main__":
     # Local testing only (Render ignores this)
     bot.remove_webhook()
     bot.infinity_polling()
+
